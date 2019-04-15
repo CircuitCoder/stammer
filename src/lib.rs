@@ -3,10 +3,10 @@ use hashbrown::hash_map::Entry;
 use hashbrown::{HashMap, HashSet};
 use serde::{Deserialize, Serialize};
 use std::fs::File;
-use std::io::BufReader;
-use std::path::Path;
-use std::iter::FromIterator;
 use std::io::BufRead;
+use std::io::BufReader;
+use std::iter::FromIterator;
+use std::path::Path;
 
 #[derive(Default)]
 pub struct Store {
@@ -64,7 +64,9 @@ impl Dict {
             for seg in line.split(' ') {
                 match entry {
                     None => entry = Some(dict.0.entry(seg.to_owned()).or_insert_with(HashSet::new)),
-                    Some(ref mut mapper) => { mapper.insert(seg.chars().next().unwrap()); },
+                    Some(ref mut mapper) => {
+                        mapper.insert(seg.chars().next().unwrap());
+                    }
                 }
             }
         }
@@ -100,7 +102,7 @@ impl From<Store> for Engine {
 impl Engine {
     pub fn query<'a, I, S>(&self, segs: I, dict: &Dict) -> Vec<char>
     where
-        I: IntoIterator<Item=S>,
+        I: IntoIterator<Item = S>,
         S: AsRef<str> + 'a,
     {
         // Viterbi
@@ -138,7 +140,11 @@ impl Engine {
                         }
                     });
 
-                let single_v = self.one_gram.get(c).map(|v| *v as f64 / self.one_gram_total as f64).unwrap_or(0.0);
+                let single_v = self
+                    .one_gram
+                    .get(c)
+                    .map(|v| *v as f64 / self.one_gram_total as f64)
+                    .unwrap_or(0.0);
                 let prob = single_v * SINGLE_RATIO + pair_max_v * PAIR_RATIO;
 
                 new_state.insert(*c, prob);
@@ -152,9 +158,10 @@ impl Engine {
             path = new_path;
         }
 
-        let (max_end, _) = state
-            .iter()
-            .fold((' ', -1.0), |l, (ck, cv)| if l.1 > *cv { l } else { (*ck, *cv) });
+        let (max_end, _) = state.iter().fold(
+            (' ', -1.0),
+            |l, (ck, cv)| if l.1 > *cv { l } else { (*ck, *cv) },
+        );
         path.remove(&max_end).unwrap()
     }
 }
