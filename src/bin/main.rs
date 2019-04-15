@@ -21,11 +21,11 @@ struct Opts {
     #[structopt(short = "e", parse(from_os_str), default_value = "./engine.json")]
     engine: PathBuf,
 
-    /// Path to the input file, omitted to read from STDIN
+    /// Path to the input file, omit to read from STDIN
     #[structopt(name = "INPUT", parse(from_os_str))]
     input: Option<PathBuf>,
 
-    /// Path to the output file, omitted to print to STDOUT
+    /// Path to the output file, omit to print to STDOUT
     #[structopt(short = "o", parse(from_os_str))]
     output: Option<PathBuf>,
 
