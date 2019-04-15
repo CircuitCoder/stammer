@@ -10,7 +10,7 @@ use std::path::Path;
 
 #[derive(Default)]
 pub struct Store {
-    two_gram: HashMap<char, HashMap<char, u64>>,
+    two_gram: HashMap<char, (HashMap<char, u64>, u64)>,
 
     one_gram: HashMap<char, u64>,
     one_gram_total: u64,
@@ -34,16 +34,22 @@ impl Store {
 
     pub fn put_pair(&mut self, a: char, b: char) {
         match self.two_gram.entry(a) {
-            Entry::Occupied(mut inner) => match inner.get_mut().entry(b) {
-                Entry::Occupied(mut store) => *store.get_mut() += 1,
-                Entry::Vacant(store) => {
-                    store.insert(1);
-                }
+            Entry::Occupied(mut inner) => {
+                let inner = inner.get_mut();
+
+                match inner.0.entry(b) {
+                    Entry::Occupied(mut store) => *store.get_mut() += 1,
+                    Entry::Vacant(store) => {
+                        store.insert(1);
+                    }
+                };
+
+                inner.1 += 1;
             },
             Entry::Vacant(inner) => {
                 let mut value = HashMap::new();
                 value.insert(b, 1);
-                inner.insert(value);
+                inner.insert((value, 1));
             }
         }
     }
@@ -79,22 +85,20 @@ impl Dict {
     }
 }
 
-const SINGLE_RATIO: f64 = 0.2;
-const PAIR_RATIO: f64 = 0.8;
+const SINGLE_RATIO: f64 = 0.0;
+const PAIR_RATIO: f64 = 1.0;
 
 #[derive(Serialize, Deserialize)]
 pub struct Engine {
-    two_gram: HashMap<char, HashMap<char, u64>>,
-    one_gram: HashMap<char, u64>,
-    one_gram_total: u64,
+    two_gram: HashMap<char, HashMap<char, f64>>,
+    one_gram: HashMap<char, f64>,
 }
 
 impl From<Store> for Engine {
     fn from(store: Store) -> Engine {
         Engine {
-            two_gram: store.two_gram,
-            one_gram: store.one_gram,
-            one_gram_total: store.one_gram_total,
+            two_gram: HashMap::from_iter(store.two_gram.iter().map(|(k, (vh, vt))| (*k, HashMap::from_iter(vh.iter().map(|(ik, iv)| (*ik, *iv as f64 / *vt as f64)))))),
+            one_gram: HashMap::from_iter(store.one_gram.iter().map(|(k, v)| (*k, *v as f64 / store.one_gram_total as f64))),
         }
     }
 }
@@ -106,11 +110,7 @@ impl Engine {
         S: AsRef<str> + 'a,
     {
         // Viterbi
-        let mut state: HashMap<char, f64> = HashMap::from_iter(
-            self.one_gram
-                .iter()
-                .map(|(k, v)| (*k, *v as f64 / self.one_gram_total as f64)),
-        );
+        let mut state: HashMap<char, f64> = self.one_gram.clone();
         let mut path: HashMap<char, Vec<char>> = HashMap::new();
 
         for s in segs.into_iter() {
@@ -130,8 +130,8 @@ impl Engine {
                             .get(pk)
                             .and_then(|store| store.get(c))
                             .cloned()
-                            .unwrap_or(0);
-                        let cv = pv * pair_prob as f64;
+                            .unwrap_or(0.0);
+                        let cv = pv * pair_prob;
 
                         if cv < lv {
                             (lk, lv)
@@ -143,7 +143,7 @@ impl Engine {
                 let single_v = self
                     .one_gram
                     .get(c)
-                    .map(|v| *v as f64 / self.one_gram_total as f64)
+                    .cloned()
                     .unwrap_or(0.0);
                 let prob = single_v * SINGLE_RATIO + pair_max_v * PAIR_RATIO;
 
