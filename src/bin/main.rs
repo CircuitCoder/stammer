@@ -1,8 +1,8 @@
 use stammer::{Engine, Dict};
 
-use std::str::Split;
 use std::fs::File;
 use std::io::BufReader;
+use std::io::BufRead;
 use failure::Error;
 use serde_json;
 
@@ -10,12 +10,20 @@ fn main() -> Result<(), Error> {
     println!("Reading dict...");
     let dict = Dict::from_file("./provided/dict.txt")?;
     println!("Reading engine...");
-    let file = File::open("./engine.json")?;
-    let reader = BufReader::new(file);
-    let engine: Engine = serde_json::from_reader(reader)?;
+    let engine_file = File::open("./engine.json")?;
+    let engine_reader = BufReader::new(engine_file);
+    let engine: Engine = serde_json::from_reader(engine_reader)?;
 
-    println!("\n{:?}", engine.query(&["ni", "shuo", "shen", "me"], &dict));
-    println!("\n{:?}", engine.query(&["qing", "hua", "da", "xue", "ji", "suan", "ji", "xi"], &dict));
+    let input_file = File::open("./provided/input.txt")?;
+    let input_reader = BufReader::new(input_file);
+    for line in input_reader.lines() {
+        let line = line?;
+        println!("Query: {}", line);
+        let segs = line.split(' ');
+        let result = engine.query(segs, &dict);
+        let result_string: String = result.into_iter().collect();
+        println!("{}", result_string);
+    }
 
     Ok(())
 }

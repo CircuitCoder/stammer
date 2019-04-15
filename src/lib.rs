@@ -100,10 +100,9 @@ impl From<Store> for Engine {
 impl Engine {
     pub fn query<'a, I, S>(&self, segs: I, dict: &Dict) -> Vec<char>
     where
-        I: IntoIterator<Item = &'a S>,
+        I: IntoIterator<Item=S>,
         S: AsRef<str> + 'a,
     {
-        print!("Query: ");
         // Viterbi
         let mut state: HashMap<char, f64> = HashMap::from_iter(
             self.one_gram
@@ -113,7 +112,6 @@ impl Engine {
         let mut path: HashMap<char, Vec<char>> = HashMap::new();
 
         for s in segs.into_iter() {
-            print!("{} ", s.as_ref());
             let mut new_state: HashMap<char, f64> = HashMap::new();
             let mut new_path: HashMap<char, Vec<char>> = HashMap::new();
 
