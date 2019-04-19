@@ -46,7 +46,8 @@ fn main() -> Result<(), Error> {
     }
     let engine_file = File::open(&opts.engine)?;
     let engine_reader = BufReader::new(engine_file);
-    let engine: Engine = serde_json::from_reader(engine_reader)?;
+    let mut engine: Engine = serde_json::from_reader(engine_reader)?;
+    engine.init_trie();
 
     let stdin = std::io::stdin();
     let input_reader: Box<dyn BufRead> = match opts.input {
@@ -72,18 +73,17 @@ fn main() -> Result<(), Error> {
         if !opts.quiet && opts.input.is_some() {
             println!("In:  {}", line);
         }
-        let segs = line.split(' ');
-        let result = engine.query(segs, &dict);
-        let result_string: String = result.into_iter().collect();
+        let segs = line.split(' ').collect::<Vec<&str>>();
+        let result = engine.query(&segs, &dict);
 
         if !opts.quiet {
-            println!("Out: {}", result_string);
+            println!("Out: {}", result);
         } else if opts.output.is_none() {
-            println!("{}", result_string);
+            println!("{}", result);
         }
 
         if let Some(ref mut of) = output_file {
-            writeln!(of, "{}", result_string)?;
+            writeln!(of, "{}", result)?;
         }
 
         if opts.input.is_none() {
