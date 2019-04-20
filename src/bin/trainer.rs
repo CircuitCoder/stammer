@@ -1,4 +1,5 @@
 #![feature(try_blocks)]
+#![feature(custom_attribute)]
 
 use stammer::{Engine, TrainingStore};
 
@@ -12,6 +13,9 @@ use std::iter::FromIterator;
 use std::path::Path;
 use jieba_rs::Jieba;
 use std::collections::VecDeque;
+use std::path::PathBuf;
+
+use structopt::StructOpt;
 
 #[derive(Deserialize)]
 #[serde(untagged)]
@@ -54,7 +58,7 @@ impl Scope {
         let segs = self.jieba.cut(s, false); // No HMM for consistent wording
 
         let mut store = VecDeque::with_capacity(N_GRAM);
-        for i in 0..N_GRAM {
+        for _ in 0..N_GRAM {
             store.push_back(None);
         }
 
@@ -82,7 +86,7 @@ fn read_file<P: AsRef<Path>>(path: P, scope: &mut Scope) -> Result<(), Error> {
     let reader = BufReader::new(file);
 
     for line in reader.lines() {
-        let result: Result<(), Error> = try {
+        let _: Result<(), Error> = try {
             let line = line?;
             let raw = if line.chars().next() == Some('{') {
                 serde_json::from_str(&line)?
@@ -110,17 +114,36 @@ fn read_all<P: AsRef<Path>>(path: P, scope: &mut Scope) -> Result<(), Error> {
 
 const WORDING_SIZE: usize = 50000000;
 
+#[derive(StructOpt, Debug)]
+struct Opts {
+    /// Path to the allowed character file
+    #[structopt(short = "c", parse(from_os_str), default_value = "./data/chars.txt")]
+    chars: PathBuf,
+
+    /// Path to the directory containing all training data
+    #[structopt(short = "d", parse(from_os_str), default_value = "./provided/data")]
+    data: PathBuf,
+
+    /// Output path for the engine state file
+    #[structopt(short = "o", parse(from_os_str), default_value = "./data/engine.json")]
+    output: PathBuf,
+}
+
 fn main() -> Result<(), Error> {
+    let opts = Opts::from_args();
+
     println!("Reading chars...");
-    let chars = fs::read_to_string("./provided/chars.txt")?;
+    let chars = fs::read_to_string(&opts.chars)?;
     println!("Read finished.");
 
     let mut scope = Scope::new(&chars);
-    read_all(Path::new("./provided/data"), &mut scope)?;
+    read_all(Path::new(&opts.data), &mut scope)?;
 
     let engine: Engine = scope.unwrap().extract(WORDING_SIZE);
-    let engine_file = File::create("./engine.json")?;
+    let engine_file = File::create(&opts.output)?;
     let mut output = BufWriter::new(engine_file);
+
+    println!("Serializing engine into {}", &opts.output.display());
     serde_json::to_writer(&mut output, &engine)?;
 
     Ok(())

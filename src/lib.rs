@@ -1,11 +1,9 @@
 use failure::Error;
-use hashbrown::hash_map::Entry;
 use hashbrown::{HashMap, HashSet};
 use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::BufRead;
 use std::io::BufReader;
-use std::iter::FromIterator;
 use std::path::Path;
 use std::collections::BinaryHeap;
 use itertools::Itertools;

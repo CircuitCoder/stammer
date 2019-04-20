@@ -14,11 +14,11 @@ use structopt::StructOpt;
 #[derive(StructOpt, Debug)]
 struct Opts {
     /// Path to the pinyin-character dictionary
-    #[structopt(short = "d", parse(from_os_str), default_value = "./provided/dict.txt")]
+    #[structopt(short = "d", parse(from_os_str), default_value = "./data/dict.txt")]
     dict: PathBuf,
 
     /// Path to the engine state file
-    #[structopt(short = "e", parse(from_os_str), default_value = "./engine.json")]
+    #[structopt(short = "e", parse(from_os_str), default_value = "./data/engine.json")]
     engine: PathBuf,
 
     /// Path to the input file, omit to read from STDIN
