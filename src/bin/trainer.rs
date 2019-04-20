@@ -9,11 +9,26 @@ use std::io::{BufReader, BufWriter};
 use std::iter::FromIterator;
 use std::path::Path;
 use jieba_rs::Jieba;
+use std::collections::VecDeque;
 
 #[derive(Deserialize)]
-struct Raw {
-    html: String,
-    // Ignores other fields
+#[serde(untagged)]
+enum Raw {
+    Weibo {
+        html: String,
+        // Ignores other fields
+    },
+
+    Plain(String),
+}
+
+impl Raw {
+    fn to_string(self) -> String {
+        match self {
+            Raw::Weibo { html } => html,
+            Raw::Plain(plain) => plain,
+        }
+    }
 }
 
 struct Scope {
@@ -21,6 +36,8 @@ struct Scope {
     chars: HashSet<char>,
     jieba: Jieba,
 }
+
+const N_GRAM: usize = 3;
 
 impl Scope {
     fn new(chars: &str) -> Scope {
@@ -34,18 +51,21 @@ impl Scope {
     fn input(&mut self, s: &str) {
         let segs = self.jieba.cut(s, false); // No HMM for consistent wording
 
-        let mut last: Option<&str> = None;
+        let mut store = VecDeque::with_capacity(N_GRAM);
+        for i in 0..N_GRAM {
+            store.push_back(None);
+        }
 
         for s in segs.iter() {
+            store.pop_front();
             if s.chars().all(|ref c| self.chars.contains(c)) {
-                if let Some(l) = last {
-                    self.store.add_pair((*s).to_owned(), l.to_owned());
-                }
-
-                last = Some(s);
+                store.push_back(Some(s.to_owned()));
+                self.store.add_count((*s).to_owned());
             } else {
-                last = None;
+                store.push_back(None);
             }
+
+            self.store.add_tuple(store.iter());
         }
     }
 
@@ -60,9 +80,16 @@ fn read_file<P: AsRef<Path>>(path: P, scope: &mut Scope) -> Result<(), Error> {
     let reader = BufReader::new(file);
 
     for line in reader.lines() {
-        let line = line?;
-        let raw: Raw = serde_json::from_str(&line)?;
-        scope.input(&raw.html);
+        let line = match line {
+            Err(_) => continue,
+            Ok(line) => line,
+        };
+        let raw = if line.chars().next() == Some('{') {
+            serde_json::from_str(&line)?
+        } else {
+            Raw::Plain(line)
+        };
+        scope.input(&raw.to_string());
     }
 
     Ok(())

@@ -37,17 +37,17 @@ struct Opts {
 fn main() -> Result<(), Error> {
     let opts = Opts::from_args();
 
-    if !opts.quiet {
-        println!("Reading dict...");
-    }
+    if !opts.quiet { println!("Reading dict..."); }
     let dict = Dict::from_file(&opts.dict)?;
-    if !opts.quiet {
-        println!("Reading engine...");
-    }
+    if !opts.quiet { println!("Reading engine..."); }
+
     let engine_file = File::open(&opts.engine)?;
     let engine_reader = BufReader::new(engine_file);
     let mut engine: Engine = serde_json::from_reader(engine_reader)?;
+
+    if !opts.quiet { println!("Init trie..."); }
     engine.init_trie();
+    if !opts.quiet { println!("Trie initialized..."); }
 
     let stdin = std::io::stdin();
     let input_reader: Box<dyn BufRead> = match opts.input {

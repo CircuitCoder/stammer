@@ -35,12 +35,13 @@ impl Trie {
 
 #[derive(Default)]
 pub struct TrainingStore {
-    all_pairs: HashMap<(String, String), u64>,
+    all_tuples: HashMap<(String, String, String), u64>,
+    counter: HashMap<String, u64>,
 }
 
 #[derive(Serialize, Deserialize, Default)]
 pub struct Engine {
-    two_gram: HashMap<String, HashMap<String, u64>>,
+    three_gram: HashMap<String, HashMap<String, HashMap<String, u64>>>,
     counter: HashMap<String, u64>,
     total: u64,
 
@@ -50,7 +51,7 @@ pub struct Engine {
 
 // Create a min heap
 #[derive(Eq, PartialEq)]
-struct HeapInd((String, String), u64);
+struct HeapInd((String, String, String), u64);
 
 impl Ord for HeapInd {
     fn cmp(&self, other: &HeapInd) -> std::cmp::Ordering {
@@ -69,17 +70,35 @@ impl TrainingStore {
         Default::default()
     }
 
-    pub fn add_pair(&mut self, a: String, b: String) {
-        *self.all_pairs.entry((a, b)).or_insert(0) += 1;
+    pub fn add_tuple<'a, I: IntoIterator<Item = &'a Option<&'a str>>>(&mut self, iter: I) {
+        let mut iter = iter.into_iter();
+
+        let mut a = (*iter.next().unwrap()).unwrap_or("").to_owned();
+        let b = (*iter.next().unwrap()).unwrap_or("").to_owned();
+        let c = (*iter.next().unwrap()).unwrap_or("").to_owned();
+
+        if c == "" {
+            return;
+        }
+
+        if b == "" {
+            a = String::new();
+        }
+
+        *self.all_tuples.entry((a, b, c)).or_insert(0) += 1;
     }
 
-    pub fn extract(self, two_gram_size: usize) -> Engine {
+    pub fn add_count(&mut self, s: String) {
+        *self.counter.entry(s).or_insert(0) += 1;
+    }
+
+    pub fn extract(self, sample_size: usize) -> Engine {
         println!("Sieving...");
         let mut heap = BinaryHeap::new();
-        for (p, v) in self.all_pairs.into_iter() {
+        for (p, v) in self.all_tuples.into_iter() {
             heap.push(HeapInd(p, v));
 
-            if heap.len() > two_gram_size {
+            if heap.len() > sample_size {
                 heap.pop();
             }
         }
@@ -87,10 +106,12 @@ impl TrainingStore {
         println!("Sieving completed. Total count: {}", heap.len());
         println!("Inserting into engines");
 
-        let mut eng: Engine = Default::default();
+        let mut eng = Engine { counter: self.counter, ..Default::default() };
 
-        while let Some(HeapInd((k1, k2), v)) = heap.pop() {
-            eng.two_gram.entry(k2.clone()).or_insert_with(HashMap::new).insert(k1.clone(), v);
+        while let Some(HeapInd((k1, k2, k3), v)) = heap.pop() {
+            eng.three_gram.entry(k1.clone()).or_insert_with(HashMap::new)
+                .entry(k2).or_insert_with(HashMap::new)
+                .insert(k3, v);
             *eng.counter.entry(k1).or_insert(0) += v;
             eng.total += v;
         }
@@ -152,34 +173,30 @@ impl Dict {
     }
 }
 
+const LAPLACE_RATIO: u64 = 1000;
+const TRIPLE_RATIO: u64 = 1000000000;
+const DOUBLE_RATIO: u64 = 10000;
+
 impl Engine {
-    fn get_transfer_count(&self, from: &str, to: &str) -> u64 {
-        if from == "" {
-            self.counter.get(to).cloned().unwrap_or(1)
-        } else {
-            self.two_gram.get(from).and_then(|bucket| bucket.get(to)).cloned().unwrap_or(1)
-        }
+    fn get_transfer_count(&self, from: &(String, String), to: &str) -> u64 {
+        // TODO: individual ratio
+        let individual = self.counter.get(to).cloned().unwrap_or(0) * LAPLACE_RATIO + 1;
+        let double = self.three_gram.get("").and_then(|bucket| bucket.get(&from.1)).and_then(|bucket| bucket.get(to)).cloned().unwrap_or(0) * LAPLACE_RATIO + 1;
+        let triple = self.three_gram.get(&from.0).and_then(|bucket| bucket.get(&from.1)).and_then(|bucket| bucket.get(to)).cloned().unwrap_or(0) * LAPLACE_RATIO + 1;
+
+        individual + double * DOUBLE_RATIO + triple * TRIPLE_RATIO
     }
 
     pub fn init_trie(&mut self) {
-        println!("Init trie...");
         let mut inserted = HashSet::new();
 
         // Traverse all words
-        for (fw, bs) in self.two_gram.iter() {
-            if !inserted.contains(fw) {
-                inserted.insert(fw);
-                self.trie.put_all(fw.chars().rev());
-            }
-
-            for (bw, _) in bs.iter() {
-                if !inserted.contains(bw) {
-                    inserted.insert(bw);
-                    self.trie.put_all(bw.chars().rev());
-                }
+        for (w, _) in self.counter.iter() {
+            if !inserted.contains(w) {
+                inserted.insert(w);
+                self.trie.put_all(w.chars().rev());
             }
         }
-        println!("Trie initialized");
     }
 
     pub fn query<'a, S>(&self, segs: &[S], dict: &Dict) -> String
@@ -187,21 +204,21 @@ impl Engine {
         S: AsRef<str> + 'a,
     {
         // Viterbi
-        let mut states: Vec<HashMap<String, f64>> = Vec::new();
-        let mut paths: Vec<HashMap<String, String>> = Vec::new();
+        let mut states: Vec<HashMap<(String, String), f64>> = Vec::new();
+        let mut paths: Vec<HashMap<(String, String), String>> = Vec::new();
         
         // Initial state
         let mut initial_state = HashMap::new();
-        initial_state.insert(String::new(), 1.0);
+        initial_state.insert(Default::default(), 1.0);
         states.push(initial_state);
 
         let mut initial_path = HashMap::new();
-        initial_path.insert("".to_owned(), "".to_owned());
+        initial_path.insert(Default::default(), "".to_owned());
         paths.push(initial_path);
 
         for index in 0..segs.len() {
-            let mut new_state: HashMap<String, f64> = HashMap::new();
-            let mut new_path: HashMap<String, String> = HashMap::new();
+            let mut new_state: HashMap<(String, String), f64> = HashMap::new();
+            let mut new_path: HashMap<(String, String), String> = HashMap::new();
 
             // Build word
             for wordlen in 0..MAX_WORD_LEN {
@@ -212,7 +229,7 @@ impl Engine {
 
                 for s in dict.build_words(&segs[(index-wordlen)..(index+1)], &self.trie) {
                     let (max_k, weighted_count, _total) =
-                        state.iter().fold((String::new(), 0.0, 0), |(lk, lv, tot), (pk, pv)| {
+                        state.iter().fold((Default::default(), 0.0, 0), |(lk, lv, tot), (pk, pv)| {
                             let pair_count = self.get_transfer_count(pk, &s);
                             let cv = pv * pair_count as f64;
 
@@ -224,11 +241,40 @@ impl Engine {
                         });
 
                     let cur_path = path.get(&max_k).unwrap();
-                    new_path.insert(s.clone(), format!("{}{}", cur_path, s));
 
-                    new_state.insert(s, weighted_count);
+                    // println!("Max transfer: {:?} -> {}: {}", max_k, s, weighted_count);
+                    let (_, pkt) = max_k;
+                    new_path.insert((pkt.clone(), s.clone()), format!("{}{}", cur_path, s));
+
+                    new_state.insert((pkt, s), weighted_count);
                 }
             }
+
+            // Joining identical states
+            let mut reducer: HashMap<String, (String, String)> = HashMap::new();
+            for (k, p) in new_path.iter() {
+                let v = new_state.get(k).unwrap();
+                if let Some(target) = reducer.get_mut(p) {
+                    if new_state.get(target).unwrap() < v {
+                        *target = k.clone();
+                    }
+                } else {
+                    reducer.insert(p.clone(), k.clone());
+                }
+            }
+            
+            let mut removed = HashSet::new();
+            for (k, p) in new_path.iter() {
+                let target = reducer.get(p).unwrap();
+                if target != k {
+                    let self_value = new_state.get(k).unwrap().clone();
+                    *new_state.get_mut(target).unwrap() += self_value;
+                    removed.insert(k.clone());
+                }
+            }
+
+            let new_path = new_path.into_iter().filter(|(ref k, _)| !removed.contains(k)).collect();
+            let mut new_state: HashMap<_, _> = new_state.into_iter().filter(|(ref k, _)| !removed.contains(k)).collect();
 
             // Normalize weighted counts
             let total_weight = new_state.iter().fold(0.0, |acc, (_, w)| acc + w);
@@ -236,12 +282,14 @@ impl Engine {
                 *v /= total_weight;
             }
 
+            // println!("State: {:#?}", new_state);
+
             states.push(new_state);
             paths.push(new_path);
         }
 
         let (max_end, _) = states.pop().unwrap().into_iter().fold(
-            (String::new(), 0.0),
+            (Default::default(), 0.0),
             |l, (ck, cv)| if l.1 > cv { l } else { (ck, cv) },
         );
 
