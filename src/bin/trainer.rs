@@ -1,3 +1,5 @@
+#![feature(try_blocks)]
+
 use stammer::{Engine, TrainingStore};
 
 use failure::Error;
@@ -80,16 +82,15 @@ fn read_file<P: AsRef<Path>>(path: P, scope: &mut Scope) -> Result<(), Error> {
     let reader = BufReader::new(file);
 
     for line in reader.lines() {
-        let line = match line {
-            Err(_) => continue,
-            Ok(line) => line,
+        let result: Result<(), Error> = try {
+            let line = line?;
+            let raw = if line.chars().next() == Some('{') {
+                serde_json::from_str(&line)?
+            } else {
+                Raw::Plain(line)
+            };
+            scope.input(&raw.to_string());
         };
-        let raw = if line.chars().next() == Some('{') {
-            serde_json::from_str(&line)?
-        } else {
-            Raw::Plain(line)
-        };
-        scope.input(&raw.to_string());
     }
 
     Ok(())
