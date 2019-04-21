@@ -1,7 +1,7 @@
 #![feature(try_blocks)]
 #![feature(custom_attribute)]
 
-use stammer::{Engine, TrainingStore};
+use stammer::{Engine, TrainingStore, Raw};
 
 use failure::Error;
 use hashbrown::HashSet;
@@ -16,26 +16,6 @@ use std::collections::VecDeque;
 use std::path::PathBuf;
 
 use structopt::StructOpt;
-
-#[derive(Deserialize)]
-#[serde(untagged)]
-enum Raw {
-    Weibo {
-        html: String,
-        // Ignores other fields
-    },
-
-    Plain(String),
-}
-
-impl Raw {
-    fn to_string(self) -> String {
-        match self {
-            Raw::Weibo { html } => html,
-            Raw::Plain(plain) => plain,
-        }
-    }
-}
 
 struct Scope {
     store: TrainingStore,
@@ -66,7 +46,6 @@ impl Scope {
             store.pop_front();
             if s.chars().all(|ref c| self.chars.contains(c)) {
                 store.push_back(Some(s.to_owned()));
-                self.store.add_count((*s).to_owned());
             } else {
                 store.push_back(None);
             }

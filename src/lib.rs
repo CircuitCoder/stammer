@@ -8,7 +8,27 @@ use std::path::Path;
 use std::collections::BinaryHeap;
 use itertools::Itertools;
 
-const MAX_WORD_LEN: usize = 4;
+const MAX_WORD_LEN: usize = 10000; // Effectively unlimited
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+pub enum Raw {
+    Weibo {
+        html: String,
+        // Ignores other fields
+    },
+
+    Plain(String),
+}
+
+impl Raw {
+    pub fn to_string(self) -> String {
+        match self {
+            Raw::Weibo { html } => html,
+            Raw::Plain(plain) => plain,
+        }
+    }
+}
 
 #[derive(Default)]
 pub struct Trie(HashMap<char, Box<Trie>>);
@@ -34,12 +54,12 @@ impl Trie {
 #[derive(Default)]
 pub struct TrainingStore {
     all_tuples: HashMap<(String, String, String), u64>,
-    counter: HashMap<String, u64>,
 }
 
 #[derive(Serialize, Deserialize, Default)]
 pub struct Engine {
     three_gram: HashMap<String, HashMap<String, HashMap<String, u64>>>,
+    two_gram: HashMap<String, HashMap<String, u64>>,
     counter: HashMap<String, u64>,
     total: u64,
 
@@ -86,10 +106,6 @@ impl TrainingStore {
         *self.all_tuples.entry((a, b, c)).or_insert(0) += 1;
     }
 
-    pub fn add_count(&mut self, s: String) {
-        *self.counter.entry(s).or_insert(0) += 1;
-    }
-
     pub fn extract(self, sample_size: usize) -> Engine {
         println!("Sieving...");
         let mut heap = BinaryHeap::new();
@@ -104,13 +120,15 @@ impl TrainingStore {
         println!("Sieving completed. Total count: {}", heap.len());
         println!("Inserting into engines");
 
-        let mut eng = Engine { counter: self.counter, ..Default::default() };
+        let mut eng: Engine = Default::default();
 
         while let Some(HeapInd((k1, k2, k3), v)) = heap.pop() {
-            eng.three_gram.entry(k1.clone()).or_insert_with(HashMap::new)
-                .entry(k2).or_insert_with(HashMap::new)
-                .insert(k3, v);
-            *eng.counter.entry(k1).or_insert(0) += v;
+            eng.three_gram.entry(k1).or_insert_with(HashMap::new)
+                .entry(k2.clone()).or_insert_with(HashMap::new)
+                .insert(k3.clone(), v);
+            *eng.two_gram.entry(k2.clone()).or_insert_with(HashMap::new)
+                .entry(k3).or_insert(0) += v;
+            *eng.counter.entry(k2).or_insert(0) += v;
             eng.total += v;
         }
 
@@ -179,7 +197,7 @@ impl Engine {
     fn get_transfer_count(&self, from: &(String, String), to: &str) -> u64 {
         // TODO: individual ratio
         let individual = self.counter.get(to).cloned().unwrap_or(0) * LAPLACE_RATIO + 1;
-        let double = self.three_gram.get("").and_then(|bucket| bucket.get(&from.1)).and_then(|bucket| bucket.get(to)).cloned().unwrap_or(0) * LAPLACE_RATIO + 1;
+        let double = self.two_gram.get(&from.1).and_then(|bucket| bucket.get(to)).cloned().unwrap_or(0) * LAPLACE_RATIO + 1;
         let triple = self.three_gram.get(&from.0).and_then(|bucket| bucket.get(&from.1)).and_then(|bucket| bucket.get(to)).cloned().unwrap_or(0) * LAPLACE_RATIO + 1;
 
         individual + double * DOUBLE_RATIO + triple * TRIPLE_RATIO
