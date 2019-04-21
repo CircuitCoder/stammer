@@ -191,7 +191,7 @@ impl Dict {
 
 const LAPLACE_RATIO: u64 = 1000;
 const TRIPLE_RATIO: u64 = 1000000000;
-const DOUBLE_RATIO: u64 = 10000;
+const DOUBLE_RATIO: u64 = 100;
 
 impl Engine {
     fn get_transfer_count(&self, from: &(String, String), to: &str) -> u64 {
